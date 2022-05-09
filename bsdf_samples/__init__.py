@@ -168,14 +168,24 @@ def set_obj_material(obj, mat):
 
 
 def set_mat_param(mat, mat_param_name, val):
-    #bsdf = mat.node_tree.nodes["Principled BSDF"]
     bsdf = find_principled_bsdf_node(mat)
     mat_param_id = MAT_PARAM_30[mat_param_name]
     bsdf.inputs[mat_param_id].default_value = val
 
 
+def set_mat_param_tex(mat, mat_param_name, tex):
+    bsdf = find_principled_bsdf_node(mat)
+    mat_param_id = MAT_PARAM_30[mat_param_name]
+
+    nodes = mat.node_tree.nodes
+    node = nodes.new('ShaderNodeTexImage')
+    node.image = tex
+    node.location = (-400, 0)
+
+    mat.node_tree.links.new(bsdf.inputs[mat_param_id], node.outputs[0])
+
+
 def get_mat_param(mat, mat_param_name):
-    #bsdf = mat.node_tree.nodes["Principled BSDF"]
     bsdf = find_principled_bsdf_node(mat)
     mat_param_id = MAT_PARAM_30[mat_param_name]
     return bsdf.inputs[mat_param_id].default_value
@@ -312,6 +322,9 @@ def create_bsdf_samples(nx, ny):
     shapes_coll = create_collection("Shapes")
     add_collection_to_scene(shapes_coll)
 
+    tex_dir = 'C:/local/data/textures'
+    tex_file = f'{tex_dir}/se_stripe_w256_c3_uint8.png'
+    tex = bpy.data.images.load(tex_file)
     for j in range(0, ny):
         for i in range(0, nx):
             loc = (i, 0, -j)
@@ -329,6 +342,11 @@ def create_bsdf_samples(nx, ny):
             alpha = i/(nx-1)
             val = (1-alpha) * sample["min"] + alpha * sample["max"]
             set_mat_param(mat, sample["name"], val)
+
+            if i == nx - 1:
+                set_mat_param_tex(mat, sample["name"], tex)
+                val = get_mat_param(mat, "Base Color")
+                set_mat_param(mat, "Base Color", (val[0]*0.5, val[1]*0.5, val[2]*0.5, val[3]))
 
             set_obj_material(obj, mat)
             link_object_to_collection(obj, shapes_coll)
