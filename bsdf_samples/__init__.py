@@ -1,6 +1,13 @@
 import bpy
 import os
 import math
+from . import util as ut
+from . import ui
+
+
+addon_dir = f'{os.path.dirname(__file__)}'
+env_file = f'{addon_dir}/env/env.hdr'
+tex_file = f'{addon_dir}/textures/stripe.png'
 
 
 MAT_PARAM_30 = {
@@ -33,10 +40,6 @@ MAT_PARAM_30 = {
 
 
 #======================================================
-def radians3(deg3):
-    return [math.radians(i) for i in deg3]
-
-
 def clear_all():
     for i in bpy.data.cameras:
         bpy.data.cameras.remove(i)
@@ -55,7 +58,7 @@ def clear_all():
 def set_mat_custom_props():
     for mat in bpy.data.materials:
         print(f'mat.name = {mat.name}')
-        bsdf = find_principled_bsdf_node(mat)
+        bsdf = ut.find_principled_bsdf_node(mat)
         if bsdf != None:
             print(f'bsdf.name = {bsdf.name}')
             mat['u_subsurface'] = get_mat_param(mat, 'Subsurface')
@@ -101,7 +104,7 @@ def create_camera(name, loc, rot_deg):
     data = bpy.data.cameras.new(name=name)
     obj = bpy.data.objects.new(name, data)
     obj.location = loc
-    obj.rotation_euler = radians3(rot_deg)
+    obj.rotation_euler = ut.radians3(rot_deg)
     return obj
 
 
@@ -142,18 +145,12 @@ def rename_all(src, dst):
 #------------------------------------------------------
 # material
 #------------------------------------------------------
-def find_principled_bsdf_node(mat):
-    if mat.node_tree != None:
-        for i in mat.node_tree.nodes:
-            if i.bl_idname == 'ShaderNodeBsdfPrincipled':
-                return i
-    return None
-
-
 def get_normal_map_strength(mat):
     if mat.node_tree != None:
         for i in mat.node_tree.links:
-            if i.to_node.bl_idname == 'ShaderNodeBsdfPrincipled' and i.to_socket.identifier == 'Normal' and i.from_node.bl_idname == 'ShaderNodeNormalMap':
+            if i.to_node.bl_idname == 'ShaderNodeBsdfPrincipled' and \
+               i.to_socket.identifier == 'Normal' and \
+               i.from_node.bl_idname == 'ShaderNodeNormalMap':
                 normal_map_node = i.from_node
                 return normal_map_node.inputs[0].default_value
     return 1.0
@@ -168,13 +165,13 @@ def set_obj_material(obj, mat):
 
 
 def set_mat_param(mat, mat_param_name, val):
-    bsdf = find_principled_bsdf_node(mat)
+    bsdf = ut.find_principled_bsdf_node(mat)
     mat_param_id = MAT_PARAM_30[mat_param_name]
     bsdf.inputs[mat_param_id].default_value = val
 
 
 def set_mat_param_tex(mat, mat_param_name, tex):
-    bsdf = find_principled_bsdf_node(mat)
+    bsdf = ut.find_principled_bsdf_node(mat)
     mat_param_id = MAT_PARAM_30[mat_param_name]
 
     nodes = mat.node_tree.nodes
@@ -186,9 +183,31 @@ def set_mat_param_tex(mat, mat_param_name, tex):
 
 
 def get_mat_param(mat, mat_param_name):
-    bsdf = find_principled_bsdf_node(mat)
+    bsdf = ut.find_principled_bsdf_node(mat)
     mat_param_id = MAT_PARAM_30[mat_param_name]
     return bsdf.inputs[mat_param_id].default_value
+
+
+def add_env():
+    world = bpy.data.worlds["World"]
+    node_tree = world.node_tree
+    nodes = node_tree.nodes
+
+    env = bpy.data.images.load(env_file)
+
+    node_bg = ut.find_node(node_tree, 'ShaderNodeBackground')
+    node_texenv = nodes.new('ShaderNodeTexEnvironment')
+    node_texenv.image = env
+    node_mapping = nodes.new('ShaderNodeMapping')
+    node_texcoord = nodes.new('ShaderNodeTexCoord')
+
+    node_texenv.location = (-300, 0)
+    node_mapping.location = (-300 * 2, 0)
+    node_texcoord.location = (-300 * 3, 0)
+
+    node_tree.links.new(node_bg.inputs[0], node_texenv.outputs[0])
+    node_tree.links.new(node_texenv.inputs[0], node_mapping.outputs[0])
+    node_tree.links.new(node_mapping.inputs[0], node_texcoord.outputs[0])
 
 
 #======================================================
@@ -322,8 +341,6 @@ def create_bsdf_samples(nx, ny):
     shapes_coll = create_collection("Shapes")
     add_collection_to_scene(shapes_coll)
 
-    tex_dir = 'C:/local/data/textures'
-    tex_file = f'{tex_dir}/se_stripe_w256_c3_uint8.png'
     tex = bpy.data.images.load(tex_file)
     for j in range(0, ny):
         for i in range(0, nx):
@@ -372,6 +389,15 @@ bl_info = {
 }
 
 
+class MY_OT_env_btn(bpy.types.Operator):
+    bl_label = "Env"
+    bl_idname = "my.env_btn"
+
+    def execute(self, context):
+        add_env()
+        return {'FINISHED'}
+
+
 class MY_OT_info_btn(bpy.types.Operator):
     bl_label = "Info"
     bl_idname = "my.info_btn"
@@ -381,6 +407,11 @@ class MY_OT_info_btn(bpy.types.Operator):
         print(bpy.data.objects)
         print(bpy.data.materials)
         print(bpy.data.textures)
+
+        obj = context.object
+        mat = obj.data.materials[0]
+        ut.add_gltf_shader_node(mat.node_tree)
+
         return {'FINISHED'}
 
 
@@ -399,7 +430,7 @@ class MY_OT_create_btn(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        create_bsdf_samples(scene.bsdf_samples_nx, len(MAT_SAMPLES))
+        create_bsdf_samples(scene.BSAM_nx, len(MAT_SAMPLES))
         return {'FINISHED'}
 
 
@@ -418,7 +449,7 @@ class MY_OT_rename_btn(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        rename_all(scene.bsdf_samples_src_text, scene.bsdf_samples_dst_text)
+        rename_all(scene.BSAM_tool_src_text, scene.BSAM_tool_dst_text)
         return {'FINISHED'}
 
 
@@ -434,29 +465,34 @@ class MY_PT_ui(bpy.types.Panel):
 
         obj = context.object
 
-        layout.operator("my.clear_btn")
+        layout.operator("my.clear_btn", icon='TRASH')
 
-        layout.prop(scene, "bsdf_samples_nx")
-        layout.operator("my.create_btn")
+        box = layout.box()
+        box.prop(scene, "BSAM_nx")
+        box.operator("my.create_btn", icon='SCENE_DATA')
 
-        layout.separator()
+        box = layout.box()
+        box.label(text='Texture Baking:')
+        box.prop(scene, "BSAM_bake_type")
+        box.prop(scene, "BSAM_bake_width")
+        box.prop(scene, "BSAM_bake_colorspace")
+        box.operator("my.bake_btn")
 
+        box = layout.box()
+        box.prop(scene, "BSAM_tool_src_text")
+        box.prop(scene, "BSAM_tool_dst_text")
+        box.operator("my.rename_btn")
+
+        layout.operator("my.env_btn")
         layout.operator("my.extra_btn")
-
-        layout.separator()
-
-        layout.prop(scene, "bsdf_samples_src_text")
-        layout.prop(scene, "bsdf_samples_dst_text")
-        layout.operator("my.rename_btn")
-
-        layout.separator()
-
         layout.operator("my.info_btn")
-        layout.operator("render.render")
+        layout.operator("render.render", icon='OUTPUT')
 
 
 classes = (
     MY_PT_ui,
+    MY_OT_env_btn,
+    ui.MY_OT_bake_btn,
     MY_OT_info_btn,
     MY_OT_clear_btn,
     MY_OT_create_btn,
@@ -470,28 +506,63 @@ classes = (
 #------------------------------------------------------
 def init_props():
     scene = bpy.types.Scene
-    scene.bsdf_samples_nx = bpy.props.IntProperty(
+
+    scene.BSAM_nx = bpy.props.IntProperty(
         name="nx",
         description="the number of columns",
         default=7,
         min=1,
         max=11
     )
-    scene.bsdf_samples_src_text = bpy.props.StringProperty(
+
+    scene.BSAM_tool_src_text = bpy.props.StringProperty(
         name="src_text",
         description="src_text",
     )
-    scene.bsdf_samples_dst_text = bpy.props.StringProperty(
+    scene.BSAM_tool_dst_text = bpy.props.StringProperty(
         name="dst_text",
         description="dst_text",
+    )
+
+    scene.BSAM_bake_type = bpy.props.EnumProperty(
+        name="bake_type",
+        description="set bake_type",
+        default='Base Color',
+        items=[
+            ('Base Color'       , 'Base Color'       , 'Base Color')       ,
+            ('Subsurface Color' , 'Subsurface Color' , 'Subsurface Color') ,
+            ('Specular'         , 'Specular'         , 'Specular')         ,
+            ('Roughness'        , 'Roughness'        , 'Roughness')        ,
+            ('INDIRECT'         , 'INDIRECT'         , 'INDIRECT')         ,
+            ('AO'               , 'AO'               , 'AO')               ,
+        ]
+    )
+    scene.BSAM_bake_width = bpy.props.IntProperty(
+        name="bake_width",
+        description="set width of a baked texture",
+        default=512,
+        min=256,
+        max=4096
+    )
+    scene.BSAM_bake_colorspace = bpy.props.EnumProperty(
+        name="bake_colorspace",
+        description="set colorspace",
+        default='sRGB',
+        items=[
+            ('sRGB', 'sRGB', 'sRGB colorspace'),
+            ('Linear', 'Linear', 'Linear colorspace'),
+        ]
     )
 
 
 def clear_props():
     scene = bpy.types.Scene
-    del scene.bsdf_samples_nx
-    del scene.bsdf_samples_src_text
-    del scene.bsdf_samples_dst_text
+    del scene.BSAM_nx
+    del scene.BSAM_tool_src_text
+    del scene.BSAM_tool_dst_text
+    del scene.BSAM_bake_type
+    del scene.BSAM_bake_width
+    del scene.BSAM_bake_colorspace
 
 
 #------------------------------------------------------
